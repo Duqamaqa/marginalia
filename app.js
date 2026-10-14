@@ -1,0 +1,137 @@
+import { cleanCell, toTSV, chooseWords, validateBackup, findDuplicate } from './core.js';
+import { dictionaryExample } from './lookup.js';
+const $ = id => document.getElementById(id);
+const STORAGE = 'marginalia.words.v1';
+let words = [], mode = 'both', revision = 0, lookupTimer, lookupController, toastTimer, editingId = null, exportSelection = [], storageHealthy = true, exampleSource = null;
+const cache = new Map();
+const starter = {
+  serendipity:{translation:'счастливая случайность',example:'Finding that little bookshop was pure serendipity.',definition:'An unexpected, fortunate discovery.'},
+  ephemeral:{translation:'мимолётный; недолговечный',example:'The beauty of the sunset was ephemeral.',definition:'Lasting for only a short time.'},
+  solace:{translation:'утешение',example:'She found solace in the familiar pages of her favorite book.',definition:'Comfort in a time of sadness or distress.'},
+  profound:{translation:'глубокий',example:'The book had a profound effect on the way she saw the world.',definition:'Very deep or intense.'},
+  linger:{translation:'задерживаться; медлить',example:'The scent of coffee lingered in the room.',definition:'To remain longer than expected.'},
+};
+function toast(message, action) {
+  clearTimeout(toastTimer); $('toast').textContent = message;
+  if (action) { const b=document.createElement('button'); b.textContent='Undo'; b.onclick=()=>{action(); $('toast').classList.remove('visible');}; $('toast').append(b); }
+  $('toast').classList.add('visible'); toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),action?8000:4500);
+}
+function commit(next, recover = false) {
+  if (!storageHealthy && !recover) { toast('Back up the unreadable data first, then restore a valid backup to continue.'); return false; }
+  try { const valid=validateBackup({version:1,words:next}); localStorage.setItem(STORAGE, JSON.stringify({version:1,words:valid})); words=valid; storageHealthy=true; render(); return true; }
+  catch { toast('Couldn’t save on this device. Free up browser storage and try again.'); return false; }
+}
+try { const saved=localStorage.getItem(STORAGE); if(saved) words=validateBackup(JSON.parse(saved)); } catch { storageHealthy=false; toast('Your saved data could not be read. Back it up, then restore a valid backup.'); }
+function el(tag, cls, content) { const n=document.createElement(tag); if(cls)n.className=cls; if(content!=null)n.textContent=content; return n; }
+function render() {
+  updateDuplicate();
+  $('word-count').textContent=`${words.length} ${words.length===1?'word':'words'}`;
+  $('export-open').disabled=!words.length;
+  const waiting=words.filter(w=>!w.exportedAt).length;
+  $('collection-note').textContent=words.length ? `${waiting} ${waiting===1?'word waiting for its':'words waiting for their'} next chapter.` : 'Every great vocabulary starts with one word.';
+  const q=$('search').value.trim().toLocaleLowerCase();
+  const list=words.filter(w=>[w.word,w.translation,w.example,w.book].some(x=>x.toLocaleLowerCase().includes(q)));
+  list.sort($('sort').value==='alphabetical'?(a,b)=>a.word.localeCompare(b.word):$('sort').value==='oldest'?(a,b)=>a.createdAt-b.createdAt:(a,b)=>b.createdAt-a.createdAt);
+  $('word-list').replaceChildren();
+  if(!list.length) {
+    const empty=el('div','empty-state'); empty.append(el('div','empty-drawing',words.length?'⌕':'m.'),el('h3','',words.length?'Still undiscovered.':'Your next chapter starts here.'),el('p','',words.length?'No words match your search. Try a different word or book.':'Save your first word and begin a collection that’s entirely your own.')); $('word-list').append(empty); return;
+  }
+  list.forEach(w=>{
+    const card=el('article','word-card'); const top=el('div','word-card-top'); top.append(el('h3','',w.word));
+    const actions=el('div','word-actions');
+    const speak=el('button','','◖))'); speak.type='button'; speak.setAttribute('aria-label',`Pronounce ${w.word}`); speak.onclick=()=>{if(!('speechSynthesis' in window))return toast('Pronunciation is unavailable in this browser.'); speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(w.word);u.lang='en-US';u.rate=.85;speechSynthesis.speak(u);};
+    const edit=el('button','','↗');edit.setAttribute('aria-label',`Edit ${w.word}`); edit.onclick=()=>editWord(w);
+    const remove=el('button','','×');remove.setAttribute('aria-label',`Delete ${w.word}`);remove.onclick=()=>{if(commit(words.filter(x=>x.id!==w.id)))toast(`“${w.word}” removed.`,()=>{if(!words.some(x=>x.id===w.id))commit([...words,w]);});};
+    actions.append(speak,edit,remove);top.append(actions);card.append(top);
+    if(w.translation){const t=el('p','translation',w.translation);t.lang='ru';card.append(t);}
+    if(w.example)card.append(el('p','example',`“${w.example}”`));
+    if(w.exampleSource){const source=el('a','example-source','Example from Wiktionary · CC BY-SA 4.0 ↗');source.href=w.exampleSource;source.target='_blank';source.rel='noopener';card.append(source);}
+    const meta=[w.book,w.exportedAt?'Exported':''].filter(Boolean).join(' · '); if(meta)card.append(el('p','book',meta));
+    $('word-list').append(card);
+  });
+}
+function setMode(next) { mode=next;document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('translation-block').hidden=mode==='example';$('example-block').hidden=mode==='translation'; }
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+function editWord(w) {
+  clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=w.id;
+  $('word').value=w.word;$('translation').value=w.translation;$('example').value=w.example;$('book').value=w.book;$('definition').textContent='';
+  setExampleSource(w.exampleSource);$('example-status').textContent='';updateDuplicate();
+  setMode(w.translation&&w.example?'both':w.translation?'translation':'example');$('cancel-edit').hidden=false;$('save').innerHTML='Save changes <span>✓</span>';$('lookup-status').textContent='Editing a saved word. Changes will update this entry.';$('word').focus();$('capture').scrollIntoView({behavior:'smooth'});
+}
+function setExampleSource(url) {exampleSource=url||null;$('example-source').hidden=!exampleSource;if(exampleSource)$('example-source').href=exampleSource;}
+function updateDuplicate() {
+  const existing=findDuplicate(words,$('word').value,editingId);
+  $('duplicate-notice').hidden=!existing;
+  $('duplicate-message').textContent=existing?`“${existing.word}” is already in your collection.`:'';
+  $('save').disabled=Boolean(existing);
+  $('edit-existing').onclick=()=>{const saved=findDuplicate(words,$('word').value,editingId);if(saved)editWord(saved);};
+  return existing;
+}
+function clearMeaning(){ $('translation').value='';$('example').value='';$('definition').textContent='';$('example-status').textContent='';setExampleSource(null); }
+let exampleEdited=0;
+$('example').addEventListener('input',()=>{exampleEdited++;if(!$('example').value.trim())setExampleSource(null);});
+$('cancel-edit').onclick=()=>{clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=null;$('cancel-edit').hidden=true;$('word').value='';clearMeaning();updateDuplicate();$('save').innerHTML='Save word <span>＋</span>';$('lookup-status').textContent='Type an English word to discover its meaning.';$('word').focus();};
+async function lookup() {
+  const term=$('word').value.trim(); if(!term)return;
+  clearTimeout(lookupTimer);lookupController?.abort();lookupController=new AbortController();
+  const current=++revision, signal=lookupController.signal;
+  const initialT=$('translation').value,initialE=$('example').value,initialEdit=exampleEdited;
+  const active=()=>current===revision&&term===$('word').value.trim();
+  $('lookup-status').textContent='Finding a little meaning…';
+  $('example-status').textContent='Finding an English example…';
+  let result=cache.get(term.toLowerCase()) || starter[term.toLowerCase()];
+  if(!result){
+    const timeout=setTimeout(()=>lookupController?.signal===signal&&lookupController.abort(),10000);
+    const responses=await Promise.allSettled([
+      fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(term)}&langpair=en%7Cru`,{signal}).then(async r=>{if(!r.ok)throw Error();const data=await r.json();if(Number(data.responseStatus)!==200||data.quotaFinished||!data.responseData?.translatedText)throw Error();const doc=new DOMParser().parseFromString(data.responseData.translatedText,'text/html');return doc.documentElement.textContent;}).then(t=>{if(active()&&$('translation').value===initialT){$('translation').value=t.slice(0,1000);$('lookup-status').textContent='Translation found. Checking for an English example…';}return t;}),
+      dictionaryExample(term,{signal}).then(d=>{if(active()){$('definition').textContent=d.definition;if(exampleEdited===initialEdit&&$('example').value===initialE){$('example').value=d.example.slice(0,2000);setExampleSource(d.exampleSource);}$('example-status').textContent='';}return d;})
+    ]);clearTimeout(timeout);
+    result={translation:responses[0].status==='fulfilled'?responses[0].value:'',...(responses[1].status==='fulfilled'?responses[1].value:{example:'',definition:''})};
+    // Partial results must remain retryable when a dictionary is temporarily down.
+    if(result.translation&&result.example)cache.set(term.toLowerCase(),result);
+  }
+  if(!active())return;
+  if($('translation').value===initialT)$('translation').value=(result.translation||'').slice(0,1000);
+  if(exampleEdited===initialEdit&&$('example').value===initialE){$('example').value=(result.example||'').slice(0,2000);setExampleSource(result.exampleSource);}
+  $('definition').textContent=result.definition||'';
+  $('example-status').textContent=result.example?'':'No dictionary example was available. Add a sentence from your book, or tap ↗ to retry.';
+  $('lookup-status').textContent=result.translation&&result.example?'Meaning found. Make it fit your story, then save.':result.translation?'Translation found. The sentence lookup did not return an example.':result.example?'English example found. You can add a translation below.':'Lookup unavailable. Add your own meaning below, or retry online.';
+}
+$('word').addEventListener('input',()=>{ clearTimeout(lookupTimer);lookupController?.abort();revision++; clearMeaning();updateDuplicate();$('lookup-status').textContent=$('word').value.trim()?'Looking up shortly…':'Type an English word to discover its meaning.';if($('word').value.trim())lookupTimer=setTimeout(lookup,550); });
+$('lookup').onclick=lookup;
+$('try-word').onclick=()=>{editingId=null;$('cancel-edit').hidden=true;$('save').innerHTML='Save word <span>＋</span>';$('word').value='serendipity';clearMeaning();updateDuplicate();setMode('both');lookup();$('capture').scrollIntoView({behavior:'smooth'});$('word').focus();};
+$('word-form').onsubmit=e=>{
+  e.preventDefault();const word=cleanCell($('word').value),translation=mode==='example'?'':$('translation').value.trim(),example=mode==='translation'?'':$('example').value.trim();
+  if(!word){$('word').focus();return toast('Start with a word you’d like to keep.');}
+  if(!translation&&!example){(mode==='example'?$('example'):$('translation')).focus();return toast('Add a translation or example before saving.');}
+  if(updateDuplicate())return toast('This word is already in your collection. Edit the saved word instead.');
+  const old=words.find(w=>w.id===editingId);const item={id:old?.id||crypto.randomUUID(),word,translation,example,book:$('book').value.trim(),createdAt:old?.createdAt||Date.now(),...(example&&exampleSource?{exampleSource}: {})};
+  if(!commit(old?words.map(w=>w.id===old.id?item:w):[...words,item]))return;
+  toast(old?'Your word has been updated.':`“${word}” is yours. On to the next discovery.`);clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=null;$('cancel-edit').hidden=true;$('word').value='';clearMeaning();updateDuplicate();$('save').innerHTML='Save word <span>＋</span>';$('lookup-status').textContent='A fresh page. What’s the next word?';$('word').focus();
+};
+$('search').oninput=render;$('sort').onchange=render;
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
+document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}}));
+for(const key of ['help','install'])$(key+'-open').onclick=()=>$(key+'-dialog').showModal();
+function updateExport() {
+  const available=words.filter(w=>!$('only-new').checked||!w.exportedAt).length;
+  $('export-count').max=String(available);$('export-count').value=String(available?Math.min(Math.max(1,Number($('export-count').value)||1),available):0);
+  $('export-available').textContent=`of ${available} ${available===1?'word':'words'}`;
+  exportSelection=chooseWords(words,{count:$('export-count').value,order:$('export-order').value,onlyNew:$('only-new').checked});
+  $('export-preview-text').textContent=exportSelection.length?`${exportSelection[0].word} → ${[exportSelection[0].translation,exportSelection[0].example].filter(Boolean).join(' — ')}${exportSelection.length>1?` (+${exportSelection.length-1} more)`:''}`:'No unexported words. Uncheck the filter to practice again.';
+  $('download').disabled=$('copy-export').disabled=!exportSelection.length;
+}
+$('export-open').onclick=()=>{$('export-count').value=String(Math.min(10,words.length));updateExport();$('export-dialog').showModal();};
+['export-count','export-order','only-new'].forEach(id=>$(id).addEventListener('change',updateExport));
+$('minus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)-1);updateExport();};$('plus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)+1);updateExport();};
+function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+function markExported(){const ids=new Set(exportSelection.map(w=>w.id));commit(words.map(w=>ids.has(w.id)?{...w,exportedAt:Date.now()}:w));}
+function currentExport(){const count=Number($('export-count').value);if(!Number.isInteger(count)||count<1||count>Number($('export-count').max)){toast('Choose a word count within the available range.');return null;} if(exportSelection.length!==count)updateExport();return toTSV(exportSelection);}
+$('download').onclick=()=>{const data=currentExport();if(!data)return;download(data,`marginalia-${exportSelection.length}-words.txt`,'text/plain;charset=utf-8');markExported();toast('Your words are ready for Quizlet or Knowt.');$('export-dialog').close();};
+$('copy-export').onclick=async()=>{const data=currentExport();if(!data)return;try{await navigator.clipboard.writeText(data);markExported();toast('Copied. Paste into your flashcard app’s import tool.');$('export-dialog').close();}catch{toast('Clipboard unavailable. Download the text file instead.');}};
+$('backup').onclick=()=>{let data;try{data=storageHealthy?JSON.stringify({version:1,words},null,2):localStorage.getItem(STORAGE);}catch{return toast('Browser storage is unavailable.');}download(data||'{}',`marginalia-backup-${new Date().toISOString().slice(0,10)}.json`,'application/json');toast('Backup downloaded. Keep it somewhere safe.');};
+$('restore').onclick=()=>$('restore-file').click();
+$('restore-file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>30_000_000)throw Error('This backup is too large.');const restored=validateBackup(JSON.parse(await f.text()));const ids=new Set(words.map(w=>w.id));const newWords=restored.filter(w=>!ids.has(w.id));if(commit([...words,...newWords],true))toast(`${newWords.length} words restored. Existing words kept.`);}catch(err){toast(err.message||'This backup could not be restored.');}e.target.value='';};
+window.addEventListener('storage',e=>{if(e.key!==STORAGE)return;try{words=e.newValue?validateBackup(JSON.parse(e.newValue)):[];render();}catch{toast('A change from another tab could not be read.');}});
+function connection(){ $('connection-status').textContent=navigator.onLine?'Saved on this device':'Offline · your words are here'; }window.addEventListener('online',connection);window.addEventListener('offline',connection);connection();render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('./sw.js', import.meta.url)).catch(()=>{});
