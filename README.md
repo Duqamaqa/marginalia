@@ -37,7 +37,7 @@ Exports are UTF-8 `.txt` files with a tab between the word and its meaning and a
 
 ## Install on an iPhone
 
-The live website is hosted on **GitHub Pages**. The included workflow tests and publishes `public/` whenever `main` changes. All asset and install paths also work under a repository subpath. The bundled Node server is for local preview.
+The live website is hosted on **GitHub Pages**. The included workflow tests and publishes `public/` to the dedicated `gh-pages` branch whenever `main` changes, then requests a Pages build. All asset and install paths also work under a repository subpath. The bundled Node server is for local preview.
 
 Open the HTTPS address in Safari, tap **Share → Add to Home Screen**, enable **Open as Web App** if offered, and tap **Add**. The manifest, home-screen icon, mobile layout, and offline app shell are included. Load the published app online once before using it offline. Live translations and dictionary lookups still need an internet connection.
 
