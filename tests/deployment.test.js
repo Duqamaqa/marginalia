@@ -33,6 +33,7 @@ test('manifest identity, launch URL, scope and icons remain inside either deploy
 
 async function worker(scope) {
   const handlers = new Map(), precached = [], deleted = [], matches = [];
+  let currentCache;
   const offlineShell = { shell: true };
   const cache = {
     addAll: async urls => precached.push(...urls),
@@ -40,11 +41,12 @@ async function worker(scope) {
     put: async () => {},
   };
   const prefix = `marginalia-${new URL(scope).pathname}-`;
+  const previousCache = `${prefix}previous-release`;
   const unrelated = ['another-app-v1', 'marginalia-/different-project/-v2'];
   const context = {
     URL, Response,
     self: { registration: { scope }, addEventListener: (name, fn) => handlers.set(name, fn), skipWaiting() {}, clients: { claim: async () => {} } },
-    caches: { open: async () => cache, keys: async () => [...unrelated, `${prefix}v1`, `${prefix}v3`], delete: async key => { deleted.push(key); return true; } },
+    caches: { open: async name => { currentCache ??= name; return cache; }, keys: async () => [...unrelated, previousCache, currentCache].filter(Boolean), delete: async key => { deleted.push(key); return true; } },
     fetch: async () => { throw new Error('Offline'); },
   };
   vm.runInNewContext(await readFile(new URL('sw.js', publicRoot), 'utf8'), context);
@@ -55,18 +57,20 @@ async function worker(scope) {
     await Promise.all(waits);
     return response ? await response : undefined;
   };
-  return { dispatch, precached, deleted, matches, offlineShell, unrelated, prefix };
+  return { dispatch, precached, deleted, matches, offlineShell, unrelated, prefix, previousCache, get currentCache() { return currentCache; } };
 }
 
 test('service worker precaches project-scoped assets and preserves unrelated caches', async () => {
   for (const scope of scopes) {
     const state = await worker(scope);
     await state.dispatch('install');
+    assert.ok(state.currentCache.startsWith(state.prefix), 'installed cache must belong to this deployment scope');
     assert.ok(state.precached.length >= 10);
     assert.ok(state.precached.includes(scope), 'offline shell must include the deployment root');
     for (const asset of state.precached) await assertAsset(new URL(asset), scope);
     await state.dispatch('activate');
-    assert.deepEqual(state.deleted, [`${state.prefix}v1`]);
+    assert.deepEqual(state.deleted, [state.previousCache]);
+    assert.ok(!state.deleted.includes(state.currentCache), 'activation must preserve the cache populated during installation');
     assert.ok(state.unrelated.every(key => !state.deleted.includes(key)));
   }
 });
