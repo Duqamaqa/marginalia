@@ -71,7 +71,8 @@ export async function createVocabularyPdf(words, { fontBytes, title = 'Marginali
     for (const line of heading.slice(0, 2)) { draw(line, 18); y -= 24; }
     draw(`${records.length} ${records.length === 1 ? 'word' : 'words'} | English / Russian`, 9, muted); y -= 19;
     draw('Create one flashcard per numbered record. Use Term as the front;', 9, muted); y -= 13;
-    draw('use its translation and example as the back. Do not add other terms.', 9, muted); y -= 15;
+    draw('use the meaning and sentence as the back, without field labels.', 9, muted); y -= 13;
+    draw('Do not add other terms or labels such as Translation or Example.', 9, muted); y -= 15;
     page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: .6, color: rule });
     y -= 24;
     if (recordNumber) { draw(`Record ${recordNumber} (continued)`, 9, muted); y -= 21; }
@@ -80,9 +81,9 @@ export async function createVocabularyPdf(words, { fontBytes, title = 'Marginali
     if (!value) return;
     const lines = wrap(value, font, size, width);
     if (y - 33 < bottom) newPage(recordNumber);
-    draw(label, 8.5, muted); y -= 16;
+    if (label) { draw(label, 8.5, muted); y -= 16; }
     for (const line of lines) {
-      if (y < bottom) { newPage(recordNumber); draw(`${label} (continued)`, 8.5, muted); y -= 16; }
+      if (y < bottom) { newPage(recordNumber); if (label) { draw(`${label} (continued)`, 8.5, muted); y -= 16; } }
       draw(line, size); y -= 16;
     }
     y -= 10;
@@ -98,8 +99,8 @@ export async function createVocabularyPdf(words, { fontBytes, title = 'Marginali
       }
     }
     field(`${index + 1}. Term`, record.word, index + 1, 13);
-    field('Russian translation', record.translation, index + 1);
-    field('English example', record.example, index + 1);
+    field('', record.translation, index + 1);
+    field('', record.example, index + 1);
     field('Book', record.book, index + 1, 9);
     if (record.source) field('Example source (CC BY-SA 4.0)', record.source, index + 1, 8);
   });
