@@ -1,5 +1,5 @@
 import { cleanCell, createExportPayload, chooseWords, validateBackup, findDuplicate } from './core.js';
-import { dictionaryExample } from './lookup.js';
+import { lookupVocabulary } from './lookup.js';
 const $ = id => document.getElementById(id);
 const STORAGE = 'marginalia.words.v1';
 let words = [], mode = 'both', revision = 0, lookupTimer, lookupController, toastTimer, editingId = null, exportSelection = [], storageHealthy = true, exampleSource = null;
@@ -56,7 +56,7 @@ function render() {
     $('word-list').append(card);
   });
 }
-function setMode(next) { mode=next;updateOptionsSummary();document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('translation-block').hidden=mode==='example';$('example-block').hidden=mode==='translation'; }
+function setMode(next) { mode=next;updateOptionsSummary();document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('translation-block').hidden=mode==='example';$('example-block').hidden=mode==='translation';updateDuplicate(); }
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 function editWord(w) {
   clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=w.id;
@@ -79,39 +79,48 @@ function updateDuplicate() {
   const existing=findDuplicate(words,$('word').value,editingId);
   $('duplicate-notice').hidden=!existing;
   $('duplicate-message').textContent=existing?`“${existing.word}” is already in your collection.`:'';
-  $('save').disabled=!hasWord||Boolean(existing);
+  const hasMeaning=(mode!=='example'&&Boolean($('translation').value.trim()))||(mode!=='translation'&&Boolean($('example').value.trim()));
+  $('save').disabled=!hasWord||Boolean(existing)||!hasMeaning;
   $('edit-existing').onclick=()=>{const saved=findDuplicate(words,$('word').value,editingId);if(saved)editWord(saved);};
   return existing;
 }
 function clearMeaning(){ $('translation').value='';$('example').value='';$('definition').textContent='';$('example-status').textContent='';setExampleSource(null); }
-let exampleEdited=0;
-$('example').addEventListener('input',()=>{exampleEdited++;if(!$('example').value.trim())setExampleSource(null);});
+function meaningEdited(){
+  clearTimeout(lookupTimer);lookupController?.abort();revision++;
+  $('lookup-status').textContent=($('translation').value.trim()||$('example').value.trim())?'Your meaning is ready. Review it, then save.':'Add your own translation or example to save this word.';
+  $('example-status').textContent='';updateDuplicate();
+}
+$('translation').addEventListener('input',meaningEdited);
+$('example').addEventListener('input',()=>{if(!$('example').value.trim())setExampleSource(null);meaningEdited();});
 $('cancel-edit').onclick=()=>{clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=null;$('cancel-edit').hidden=true;$('word').value='';clearMeaning();updateDuplicate();$('save').innerHTML='Save word';$('lookup-status').textContent='Lookups are automatic. You can edit the results.';$('word').focus();};
 async function lookup() {
-  const term=$('word').value.trim(); if(!term)return;
+  const term=$('word').value.trim();if(!term)return;
   clearTimeout(lookupTimer);lookupController?.abort();lookupController=new AbortController();
-  const current=++revision, signal=lookupController.signal;
-  const initialT=$('translation').value,initialE=$('example').value,initialEdit=exampleEdited;
+  const current=++revision,signal=lookupController.signal;
   const active=()=>current===revision&&term===$('word').value.trim();
-  $('lookup-status').textContent='Looking up…';
-  $('example-status').textContent='Finding an English example…';
-  let result=cache.get(term.toLowerCase()) || starter[term.toLowerCase()];
-  if(!result){
-    const timeout=setTimeout(()=>lookupController?.signal===signal&&lookupController.abort(),10000);
-    const responses=await Promise.allSettled([
-      fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(term)}&langpair=en%7Cru`,{signal}).then(async r=>{if(!r.ok)throw Error();const data=await r.json();if(Number(data.responseStatus)!==200||data.quotaFinished||!data.responseData?.translatedText)throw Error();const doc=new DOMParser().parseFromString(data.responseData.translatedText,'text/html');return doc.documentElement.textContent;}).then(t=>{if(active()&&$('translation').value===initialT){$('translation').value=t.slice(0,1000);$('lookup-status').textContent='Translation found. Checking for an English example…';}return t;}),
-      dictionaryExample(term,{signal}).then(d=>{if(active()){$('definition').textContent=d.definition;if(exampleEdited===initialEdit&&$('example').value===initialE){$('example').value=d.example.slice(0,2000);setExampleSource(d.exampleSource);}$('example-status').textContent='';}return d;})
-    ]);clearTimeout(timeout);
-    result={translation:responses[0].status==='fulfilled'?responses[0].value:'',...(responses[1].status==='fulfilled'?responses[1].value:{example:'',definition:''})};
-    // Partial results must remain retryable when a dictionary is temporarily down.
-    if(result.translation&&result.example)cache.set(term.toLowerCase(),result);
-  }
+  clearMeaning();updateDuplicate();
+  $('lookup-status').textContent='Finding a matching meaning and example…';
+  let result=cache.get(term.toLowerCase())||starter[term.toLowerCase()];
+  try {
+    if(!result){
+      result=await lookupVocabulary(term,{signal});
+      if(result.translation&&result.example)cache.set(term.toLowerCase(),result);
+    }
+  } catch {if(!active())return;result={status:'unavailable'};}
   if(!active())return;
-  if($('translation').value===initialT)$('translation').value=(result.translation||'').slice(0,1000);
-  if(exampleEdited===initialEdit&&$('example').value===initialE){$('example').value=(result.example||'').slice(0,2000);setExampleSource(result.exampleSource);}
-  $('definition').textContent=result.definition||'';
-  $('example-status').textContent=(result.example||$('example').value.trim())?'':'No example found. Add a sentence from your book, or tap Look up to retry.';
-  $('lookup-status').textContent=result.translation&&result.example?'Review the meaning, then tap Save word.':result.translation?'Translation found. The sentence lookup did not return an example.':result.example?'English example found. You can add a translation below.':'Lookup unavailable. Add your own meaning below, or retry online.';
+  // Apply a complete sense together; never display a translation from a different request.
+  $('translation').value=(result.translation||'').slice(0,1000);
+  $('example').value=(result.example||'').slice(0,2000);
+  $('definition').textContent=result.definition||'';setExampleSource(result.exampleSource);
+  if(result.status==='not-found'){
+    $('lookup-status').textContent='Word not found in the available dictionaries. Check the spelling, or enter your own translation or example to save it.';
+  }else if(result.status==='unavailable'){
+    $('lookup-status').textContent='Lookup unavailable. Check your connection and retry, or enter your own translation or example.';
+  }else{
+    $('lookup-status').textContent=result.translation&&result.example?'Meaning and example found. Review them, then save.':result.translation?'Meaning found. Add an example if you want one.':result.example?'Example found. A matching Russian meaning is unavailable; you can add your own.':'Word found, but no translation or example is available. Add your own to save it.';
+    if(!result.example)$('example-status').textContent='No example available for this meaning. You can add a sentence from your book.';
+  }
+  updateDuplicate();
 }
 $('word').addEventListener('input',()=>{ clearTimeout(lookupTimer);lookupController?.abort();revision++; clearMeaning();updateDuplicate();$('lookup-status').textContent=$('word').value.trim()?'Looking up…':'Lookups are automatic. You can edit the results.';if($('word').value.trim())lookupTimer=setTimeout(lookup,550); });
 $('lookup').onclick=lookup;
@@ -121,7 +130,7 @@ $('word-form').onsubmit=e=>{
   if(!word){$('word').focus();return toast('Enter an English word first.');}
   if(!translation&&!example){(mode==='example'?$('example'):$('translation')).focus();return toast('Add a translation or example before saving.');}
   if(updateDuplicate())return toast('This word is already in your collection. Edit the saved word instead.');
-  const old=words.find(w=>w.id===editingId);const item={id:old?.id||crypto.randomUUID(),word,translation,example,book:$('book').value.trim(),createdAt:old?.createdAt||Date.now(),...(example&&exampleSource?{exampleSource}: {})};
+  const old=words.find(w=>w.id===editingId);const item={id:old?.id||crypto.randomUUID(),word,translation,example,book:$('book').value.trim(),createdAt:old?.createdAt||Date.now(),...(exampleSource?{exampleSource}: {})};
   if(!commit(old?words.map(w=>w.id===old.id?item:w):[...words,item]))return;
   toast(old?'Your word has been updated.':`“${word}” saved.`);clearTimeout(lookupTimer);lookupController?.abort();revision++;editingId=null;$('cancel-edit').hidden=true;$('word').value='';clearMeaning();updateDuplicate();$('save').innerHTML='Save word';$('lookup-status').textContent='Saved. Enter the next word.';$('word').focus();
 };
