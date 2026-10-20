@@ -8,9 +8,12 @@ const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8')
 // Execute the real export controller with just its DOM and storage boundaries mocked.
 const section = app.slice(app.indexOf('let exportRevision='), app.indexOf("$('backup').onclick="));
 assert.ok(section.includes("$('copy-export').onclick="));
+const pdfImport = "await import('./pdf-export.js')";
+assert.ok(section.includes(pdfImport));
+const controller = section.replace(pdfImport, 'await Promise.resolve({createVocabularyPdf: pdfGenerator})');
 const seed = () => ['a', 'b', 'c'].map((id, index) => ({ id, word: id, translation: `слово ${id}`, example: '', book: '', createdAt: index + 1 }));
 
-function harness(clipboard) {
+function harness(clipboard, pdfGenerator = async () => new Uint8Array([37, 80, 68, 70])) {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -25,18 +28,22 @@ function harness(clipboard) {
   }
   element('export-target').value = 'knowt';
   element('export-order').value = 'oldest';
-  const commits = [], messages = [];
+  const commits = [], messages = [], blobs = new Map(), revoked = [];
+  const urls = {
+    createObjectURL(blob) { const url = `blob:test-${blobs.size + 1}`; blobs.set(url, blob); return url; },
+    revokeObjectURL(url) { revoked.push(url); },
+  };
   const context = vm.createContext({
     $: element, seedWords: seed(), commits, navigator: { clipboard },
     createExportPayload, chooseWords, el: (_tag, _class, textContent) => ({ textContent }),
-    toast: message => messages.push(message), URL, Blob, setTimeout,
+    toast: message => messages.push(message), URL: urls, Blob, setTimeout, pdfGenerator,
   });
   vm.runInContext(`let words=seedWords, exportSelection=[];
     function commit(next){words=next;commits.push(next);return true;}
-    ${section}
+    ${controller}
     globalThis.state={get words(){return words;}};`, context);
   element('export-open').onclick();
-  return { element, commits, messages, get words() { return context.state.words; } };
+  return { element, commits, messages, blobs, revoked, get words() { return context.state.words; } };
 }
 
 test('clipboard rejection exposes selectable text without marking cards exported', async () => {
@@ -104,4 +111,74 @@ test('failed pending copy cannot replace a newer selection with its older fallba
   assert.equal(ui.element('export-text').value, currentText);
   assert.equal(ui.element('manual-export').open, false);
   assert.equal(ui.commits.length, 0);
+});
+
+test('prepared PDF keeps a persistent save link and marks only captured IDs on save', async () => {
+  let captured;
+  const ui = harness(undefined, async records => { captured = records; return new Uint8Array([37, 80, 68, 70]); });
+  ui.element('export-count').value = '1';
+  ui.element('export-count').events.change();
+  const pending = ui.element('download-pdf').onclick();
+  ui.words[0].translation = 'Changed during PDF preparation';
+  await pending;
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].translation, 'слово a', 'PDF generation receives captured card contents');
+  assert.equal(ui.commits.length, 0, 'preparing a PDF is not the same as saving it');
+  assert.equal(ui.element('pdf-ready').hidden, false);
+  const link = ui.element('save-pdf-link');
+  assert.equal(link.download, 'marginalia-1-words.pdf');
+  assert.equal(ui.blobs.get(link.href).type, 'application/pdf');
+  assert.deepEqual([...new Uint8Array(await ui.blobs.get(link.href).arrayBuffer())], [37, 80, 68, 70]);
+  link.onclick();
+  assert.ok(ui.words.find(record => record.id === 'a').exportedAt);
+  assert.ok(ui.words.filter(record => record.id !== 'a').every(record => !record.exportedAt));
+  assert.equal(ui.element('pdf-ready').hidden, false, 'save link remains available for an iPhone preview or retry');
+  assert.deepEqual(ui.revoked, [], 'the blob must outlive the async preparation click');
+  ui.element('export-count').value = '2';
+  ui.element('export-count').events.change();
+  assert.equal(ui.element('pdf-ready').hidden, true);
+  assert.deepEqual(ui.revoked, [link.href], 'changing selection releases the outdated PDF');
+});
+
+test('PDF result is discarded when its selection changes while generation is pending', async () => {
+  let finish;
+  const ui = harness(undefined, () => new Promise(resolve => { finish = resolve; }));
+  const pending = ui.element('download-pdf').onclick();
+  await Promise.resolve();
+  assert.equal(ui.element('download-pdf').disabled, true);
+  ui.element('export-count').value = '1';
+  ui.element('export-order').value = 'newest';
+  ui.element('export-count').events.change();
+  finish(new Uint8Array([37, 80, 68, 70]));
+  await pending;
+  assert.equal(ui.blobs.size, 0, 'a stale document must never be offered as the current selection');
+  assert.equal(ui.element('pdf-ready').hidden, true);
+  assert.equal(ui.element('export-status').textContent, '');
+  assert.equal(ui.commits.length, 0);
+  assert.equal(ui.element('download-pdf').disabled, false);
+});
+
+test('PDF generation failure permits retry and never marks cards exported', async () => {
+  const ui = harness(undefined, async () => { throw new Error('Font unavailable'); });
+  await ui.element('download-pdf').onclick();
+  assert.equal(ui.commits.length, 0);
+  assert.equal(ui.blobs.size, 0);
+  assert.equal(ui.element('pdf-ready').hidden, true);
+  assert.match(ui.element('export-status').textContent, /couldn.t prepare the PDF/i);
+  assert.equal(ui.element('download-pdf').disabled, false);
+  assert.equal(ui.element('download-pdf').textContent, 'Download PDF for Knowt');
+});
+
+test('closing the export dialog discards a PDF still being generated', async () => {
+  let finish;
+  const ui = harness(undefined, () => new Promise(resolve => { finish = resolve; }));
+  const pending = ui.element('download-pdf').onclick();
+  await Promise.resolve();
+  ui.element('export-dialog').open = false;
+  ui.element('export-dialog').events.close();
+  finish(new Uint8Array([37, 80, 68, 70]));
+  await pending;
+  assert.equal(ui.blobs.size, 0);
+  assert.equal(ui.commits.length, 0);
+  assert.equal(ui.element('pdf-ready').hidden, true);
 });

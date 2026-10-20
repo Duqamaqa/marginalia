@@ -100,7 +100,7 @@
   <div id="toast" class="toast" role="status"></div>
   <dialog id="export-dialog" aria-labelledby="export-title">
     <div class="dialog-heading"><h2 id="export-title">Export words</h2><button class="close" data-close aria-label="Close export">×</button></div>
-    <p class="dialog-copy">Copy your words, then paste them into your study app.</p>
+    <p id="export-intro" class="dialog-copy">Download a PDF, then upload it in the Knowt app.</p>
     <label for="export-target">Study app</label>
     <select id="export-target"><option value="knowt">Knowt</option><option value="quizlet">Quizlet</option></select>
     <label for="export-count">How many words?</label>
@@ -109,20 +109,21 @@
     <select id="export-order"><option value="oldest">Oldest first</option><option value="newest">Newest first</option><option value="random">Random selection</option></select>
     <label class="check-label"><input id="only-new" type="checkbox"> Only words I haven’t exported</label>
     <div class="export-preview"><span>Preview</span><p id="export-preview-text"></p></div>
-    <div class="export-actions"><button id="copy-export" class="primary">Copy for Knowt</button><a id="open-study-app" class="secondary" href="https://knowt.com/" target="_blank" rel="noopener">Open Knowt website ↗</a></div>
+    <div class="export-actions"><button id="download-pdf" class="primary">Download PDF for Knowt</button><button id="copy-export" hidden class="primary">Copy for Knowt</button><a id="open-study-app" class="secondary" href="https://knowt.com/" target="_blank" rel="noopener">Open Knowt website ↗</a></div>
+    <div id="pdf-ready" class="export-actions" hidden><a id="save-pdf-link" class="primary" target="_blank" rel="noopener">Save PDF to Files</a></div>
     <p id="export-status" class="export-status" role="status" aria-live="polite"></p>
     <section class="import-guide" aria-labelledby="import-heading">
-      <h3 id="import-heading">Paste into Knowt</h3>
-      <ol id="import-steps"><li>On Knowt’s website, create a new flashcard set.</li><li>Choose <strong>Import manually</strong> and paste the copied text.</li><li>Set <strong>Tab</strong> between term and definition, and <strong>New line</strong> between cards. Review, then import and save.</li></ol>
-      <p id="mobile-import-note">On iPhone, open Knowt in Safari for this step. If Import manually isn’t available, use the website on a computer. Study the saved set in the Knowt app with the same account.</p>
-      <a id="import-help" href="https://help.knowt.com/en/articles/10298094-how-can-i-import-flashcards-from-things-like-anki-and-csv-files" target="_blank" rel="noopener">Knowt’s import instructions ↗</a>
+      <h3 id="import-heading">Import a file into Knowt</h3>
+      <ol id="import-steps"><li>Download the PDF above. If a preview opens, tap Share → Save to Files.</li><li>In Knowt choose Create → Flashcards → Upload file from device and select the PDF.</li><li>Choose Flashcards if prompted, then review the generated cards.</li></ol>
+      <p id="mobile-import-note">Knowt uses AI to turn PDFs into flashcards. This uses your AI allowance and may change or omit cards.</p>
+      <a id="import-help" href="https://help.knowt.com/en/articles/10305785-how-do-i-use-the-ai-summarizers" target="_blank" rel="noopener">Knowt’s import instructions ↗</a>
     </section>
-    <details id="manual-export" class="manual-export"><summary>View text or download a file</summary>
+    <details id="manual-export" class="manual-export"><summary>Text export for website import</summary>
       <label for="export-text">Flashcard import text</label>
       <textarea id="export-text" rows="5" readonly spellcheck="false" autocapitalize="none" aria-describedby="manual-copy-hint"></textarea>
       <p id="manual-copy-hint" class="field-hint">If copying didn’t work, tap Select all text, then touch and hold the selection and choose Copy.</p>
       <div class="manual-actions"><button id="select-export" class="secondary">Select all text</button><button id="download" class="quiet">Download .txt</button></div>
-      <p class="field-hint">Knowt’s manual importer uses pasted text. You don’t need to choose a file from Files.</p>
+      <p class="field-hint">This text is for website import. Use the PDF button above for file upload in the Knowt app.</p>
     </details>
   </dialog>
   <dialog id="help-dialog" aria-labelledby="help-title">
@@ -130,7 +131,7 @@
     <ol class="help-steps">
       <li><b>Enter an English word.</b><p>A Russian translation and an English example appear when available. You can edit either field.</p></li>
       <li><b>Tap Save word.</b><p>The word joins your list and the input clears for the next one. Already saved words are flagged automatically.</p></li>
-      <li><b>Tap Export words.</b><p>Choose how many words and your study app. Copy the text, then paste it into the app’s website import screen. The export screen shows each step.</p></li>
+      <li><b>Tap Export words.</b><p>Choose how many words and your study app. Download a PDF for Knowt’s file uploader, or copy text for Quizlet’s website. The export screen shows each step.</p></li>
     </ol>
     <p class="import-note">Words are stored on this device. Use More → Back up words to keep a copy or move them to another device. Saved words work offline; online lookup services receive the words you look up.</p>
   </dialog>
