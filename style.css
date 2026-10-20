@@ -156,3 +156,6 @@ dialog>label { margin-top: 18px; }
 #export-text { font-size: 16px; line-height: 1.6; white-space: pre; overflow-wrap: normal; tab-size: 4; }
 .manual-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 @media(max-width:380px) { .export-actions { grid-template-columns: 1fr; } }
+
+#download-pdf, #save-pdf-link { grid-column: 1 / -1; text-align: center; white-space: normal; }
+#pdf-ready { margin-top: 10px; }

@@ -129,24 +129,27 @@ $('search').oninput=render;$('sort').onchange=render;
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}}));
 for(const key of ['help','install'])$(key+'-open').onclick=()=>$(key+'-dialog').showModal();
-let exportRevision=0, copyPending=false;
+let exportRevision=0, copyPending=false, pdfPending=false, pdfUrl=null;
+function clearPdf(){if(pdfUrl)URL.revokeObjectURL(pdfUrl);pdfUrl=null;$('pdf-ready').hidden=true;}
 const studyApps={
-  knowt:{name:'Knowt',url:'https://knowt.com/',help:'https://help.knowt.com/en/articles/10298094-how-can-i-import-flashcards-from-things-like-anki-and-csv-files',steps:['On Knowt’s website, create a new flashcard set.','Choose Import manually and paste the copied text.','Set Tab between term and definition, and New line between cards. Review, then import and save.'],note:'On iPhone, open Knowt in Safari for this step. If Import manually isn’t available, use the website on a computer. Study the saved set in the Knowt app with the same account.'},
+  knowt:{name:'Knowt',url:'https://knowt.com/',help:'https://help.knowt.com/en/articles/10305785-how-do-i-use-the-ai-summarizers',steps:['Download the PDF above. If a preview opens on iPhone, tap Share → Save to Files.','In the Knowt app, choose Create → Flashcards → Upload file from device, then select the PDF from Files.','Choose Flashcards if prompted. Review the generated cards before saving your set.'],note:'Knowt uses AI to turn uploaded PDFs into flashcards. This uses your AI allowance and may change or omit cards. The PDF includes your selected words, translations and examples.'},
   quizlet:{name:'Quizlet',url:'https://quizlet.com/',help:'https://help.quizlet.com/hc/en-au/articles/360029977151-Creating-sets-by-importing-content',steps:['On Quizlet’s website, choose Create → Flashcard set.','Select Import and paste the copied text.','Set Tab between term and definition, and New line between cards. Review, import, and create the set.'],note:'Quizlet imports sets on its website. If the import screen isn’t available in Safari on iPhone, use a computer. You can study the saved set in the iPhone app.'}
 };
 function exportApp(){return studyApps[$('export-target').value]||studyApps.knowt;}
 function updateExportTarget(){
-  exportRevision++;$('export-status').textContent='';
-  const target=exportApp();
+  exportRevision++;clearPdf();$('export-status').textContent='';
+  const target=exportApp(),isKnowt=target===studyApps.knowt;
+  $('download-pdf').hidden=!isKnowt;$('copy-export').hidden=isKnowt;$('open-study-app').hidden=isKnowt;
+  $('export-intro').textContent=isKnowt?'Download a PDF, then upload it in the Knowt app.':'Copy your words, then paste them into Quizlet’s website.';
   $('copy-export').textContent=copyPending?'Copying…':`Copy for ${target.name}`;
   $('open-study-app').textContent=`Open ${target.name} website ↗`;$('open-study-app').href=target.url;
-  $('import-heading').textContent=`Paste into ${target.name}`;
+  $('import-heading').textContent=isKnowt?'Import a file into Knowt':`Paste into ${target.name}`;
   $('import-steps').replaceChildren(...target.steps.map(step=>el('li','',step)));
   $('mobile-import-note').textContent=target.note;
   $('import-help').textContent=`${target.name}’s import instructions ↗`;$('import-help').href=target.help;
 }
 function updateExport() {
-  exportRevision++;$('export-status').textContent='';
+  exportRevision++;clearPdf();$('export-status').textContent='';
   const available=words.filter(w=>!$('only-new').checked||!w.exportedAt).length;
   $('export-count').max=String(available);$('export-count').value=String(available?Math.min(Math.max(1,Number($('export-count').value)||1),available):0);
   $('export-available').textContent=`of ${available} ${available===1?'word':'words'}`;
@@ -155,13 +158,14 @@ function updateExport() {
   $('export-text').value=createExportPayload(exportSelection).text;
   $('download').disabled=$('select-export').disabled=!exportSelection.length;
   $('copy-export').disabled=copyPending||!exportSelection.length;
+  $('download-pdf').disabled=pdfPending||!exportSelection.length;
 }
 $('export-target').onchange=updateExportTarget;
 $('export-open').onclick=()=>{
   $('export-count').value=String(Math.min(10,words.length));$('only-new').checked=false;
   $('manual-export').open=false;updateExportTarget();updateExport();$('export-dialog').showModal();
 };
-$('export-dialog').addEventListener('close',()=>{exportRevision++;});
+$('export-dialog').addEventListener('close',()=>{exportRevision++;clearPdf();});
 ['export-count','export-order','only-new'].forEach(id=>$(id).addEventListener('change',updateExport));
 $('minus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)-1);updateExport();};$('plus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)+1);updateExport();};
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
@@ -170,7 +174,24 @@ function currentExport(){const count=Number($('export-count').value);if(!Number.
 $('download').onclick=()=>{
   const payload=currentExport();if(!payload)return;
   download(payload.text,`marginalia-${payload.count}-words.txt`,'text/plain;charset=utf-8');markExported(payload.ids);
-  $('export-status').textContent='Text file downloaded. For Knowt or Quizlet, use the Copy button above and paste into the website’s import screen.';
+  $('export-status').textContent='Text file prepared for website import. For file upload in the Knowt app, use Download PDF for Knowt.';
+};
+$('download-pdf').onclick=async()=>{
+  const payload=currentExport();if(!payload||pdfPending)return;
+  const selected=exportSelection.map(word=>({...word})),revision=exportRevision;
+  clearPdf();pdfPending=true;$('download-pdf').disabled=true;$('download-pdf').textContent='Preparing PDF…';
+  try{
+    const {createVocabularyPdf}=await import('./pdf-export.js');
+    const bytes=await createVocabularyPdf(selected);
+    if(revision!==exportRevision||!$('export-dialog').open)return;
+    pdfUrl=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+    const link=$('save-pdf-link');link.href=pdfUrl;link.download=`marginalia-${payload.count}-words.pdf`;
+    link.onclick=()=>markExported(payload.ids);
+    $('pdf-ready').hidden=false;
+    $('export-status').textContent=`PDF ready with ${payload.count} ${payload.count===1?'word':'words'}. Tap Save PDF. If a preview opens, tap Share → Save to Files, then upload it in Knowt.`;
+  }catch{
+    if(revision===exportRevision&&$('export-dialog').open)$('export-status').textContent='Couldn’t prepare the PDF. Connect to the internet once to load the PDF tools, then try again.';
+  }finally{pdfPending=false;$('download-pdf').disabled=!exportSelection.length;$('download-pdf').textContent='Download PDF for Knowt';}
 };
 function selectExportText(){
   $('manual-export').open=true;const area=$('export-text');area.focus();area.select();area.setSelectionRange(0,area.value.length);
