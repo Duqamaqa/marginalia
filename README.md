@@ -28,7 +28,7 @@ Open http://localhost:4173. Set `PORT` to use another port. Run `npm test` for t
 
 ## Reading workflow
 
-1. Type an English word or phrase. Lookups request a Russian translation and an English dictionary example when available.
+1. Type an English word or phrase. Lookups choose a dictionary meaning with an English example where available, then use the Russian translation for that same meaning. If the dictionary has no Russian translation, the selected English definition is translated into Russian instead.
 2. Choose Both, Translation, or English example. Edit the suggested meaning to match your book; dictionary examples are not available for every word.
 3. Add an optional book title and save. The form clears and returns focus to the next word.
 4. Search or sort your collection, then export a chosen number of words in oldest, newest, or random order. Filter out previously exported words when desired.
@@ -51,6 +51,6 @@ Use **Back up** regularly to download a JSON copy. Use **Restore** to bring that
 
 ## Lookup services
 
-Lookups use [MyMemory](https://mymemory.translated.net/) for translation and [Free Dictionary API](https://dictionaryapi.dev/) and [Free Dictionary API / Wiktionary](https://freedictionaryapi.com/api/v1) in parallel for English examples. These external services receive the requested word. Availability, coverage, rate limits, and translation quality depend on those providers. Wiktionary example sources and their CC BY-SA 4.0 attribution are kept with saved words, backups, and exports. Failed or incomplete lookups are retryable. A handful of starter words have built-in translations and examples. If a request fails or a meaning is missing, enter or correct it manually and save it.
+Lookups use [Free Dictionary API / Wiktionary](https://freedictionaryapi.com/api/v1) for sense-specific Russian translations and English examples, with [Free Dictionary API](https://dictionaryapi.dev/) as a fallback. Both dictionaries receive the requested word. When a selected sense has no Russian translation, [MyMemory](https://mymemory.translated.net/) receives that English definition to translate its meaning, rather than translating an ambiguous bare word independently. Availability, coverage, rate limits, and translation quality depend on those providers. Wiktionary example sources and their CC BY-SA 4.0 attribution are kept with saved words, backups, and exports. Unknown words display “Word not found” and remain unsavable until you enter a translation or example. Network failures display “Lookup unavailable” instead. Save is enabled only when the selected save format contains a nonblank translation or example. Editing either meaning field cancels pending lookup results so your own text is not overwritten. Failed or incomplete lookups are retryable. A handful of starter words have built-in translations and examples. If a request fails or a meaning is missing, enter or correct it manually and save it.
 
 The interface does not require a paid service, authentication, analytics, or a backend. Serving it over HTTPS is required for service-worker support outside localhost and for the intended installed-app experience.
