@@ -1,4 +1,4 @@
-import { cleanCell, toTSV, chooseWords, validateBackup, findDuplicate } from './core.js';
+import { cleanCell, createExportPayload, chooseWords, validateBackup, findDuplicate } from './core.js';
 import { dictionaryExample } from './lookup.js';
 const $ = id => document.getElementById(id);
 const STORAGE = 'marginalia.words.v1';
@@ -129,22 +129,68 @@ $('search').oninput=render;$('sort').onchange=render;
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}}));
 for(const key of ['help','install'])$(key+'-open').onclick=()=>$(key+'-dialog').showModal();
+let exportRevision=0, copyPending=false;
+const studyApps={
+  knowt:{name:'Knowt',url:'https://knowt.com/',help:'https://help.knowt.com/en/articles/10298094-how-can-i-import-flashcards-from-things-like-anki-and-csv-files',steps:['On Knowt’s website, create a new flashcard set.','Choose Import manually and paste the copied text.','Set Tab between term and definition, and New line between cards. Review, then import and save.'],note:'On iPhone, open Knowt in Safari for this step. If Import manually isn’t available, use the website on a computer. Study the saved set in the Knowt app with the same account.'},
+  quizlet:{name:'Quizlet',url:'https://quizlet.com/',help:'https://help.quizlet.com/hc/en-au/articles/360029977151-Creating-sets-by-importing-content',steps:['On Quizlet’s website, choose Create → Flashcard set.','Select Import and paste the copied text.','Set Tab between term and definition, and New line between cards. Review, import, and create the set.'],note:'Quizlet imports sets on its website. If the import screen isn’t available in Safari on iPhone, use a computer. You can study the saved set in the iPhone app.'}
+};
+function exportApp(){return studyApps[$('export-target').value]||studyApps.knowt;}
+function updateExportTarget(){
+  exportRevision++;$('export-status').textContent='';
+  const target=exportApp();
+  $('copy-export').textContent=copyPending?'Copying…':`Copy for ${target.name}`;
+  $('open-study-app').textContent=`Open ${target.name} website ↗`;$('open-study-app').href=target.url;
+  $('import-heading').textContent=`Paste into ${target.name}`;
+  $('import-steps').replaceChildren(...target.steps.map(step=>el('li','',step)));
+  $('mobile-import-note').textContent=target.note;
+  $('import-help').textContent=`${target.name}’s import instructions ↗`;$('import-help').href=target.help;
+}
 function updateExport() {
+  exportRevision++;$('export-status').textContent='';
   const available=words.filter(w=>!$('only-new').checked||!w.exportedAt).length;
   $('export-count').max=String(available);$('export-count').value=String(available?Math.min(Math.max(1,Number($('export-count').value)||1),available):0);
   $('export-available').textContent=`of ${available} ${available===1?'word':'words'}`;
   exportSelection=chooseWords(words,{count:$('export-count').value,order:$('export-order').value,onlyNew:$('only-new').checked});
-  $('export-preview-text').textContent=exportSelection.length?`${exportSelection[0].word} → ${[exportSelection[0].translation,exportSelection[0].example].filter(Boolean).join(' — ')}${exportSelection.length>1?` (+${exportSelection.length-1} more)`:''}`:'No unexported words. Uncheck the filter to practice again.';
-  $('download').disabled=$('copy-export').disabled=!exportSelection.length;
+  $('export-preview-text').textContent=exportSelection.length?`${exportSelection[0].word} → ${[exportSelection[0].translation,exportSelection[0].example].filter(Boolean).join(' — ')}${exportSelection.length>1?` (+${exportSelection.length-1} more)`:''}`:'No unexported words. Uncheck the filter to export saved words again.';
+  $('export-text').value=createExportPayload(exportSelection).text;
+  $('download').disabled=$('select-export').disabled=!exportSelection.length;
+  $('copy-export').disabled=copyPending||!exportSelection.length;
 }
-$('export-open').onclick=()=>{$('export-count').value=String(Math.min(10,words.length));updateExport();$('export-dialog').showModal();};
+$('export-target').onchange=updateExportTarget;
+$('export-open').onclick=()=>{
+  $('export-count').value=String(Math.min(10,words.length));$('only-new').checked=false;
+  $('manual-export').open=false;updateExportTarget();updateExport();$('export-dialog').showModal();
+};
+$('export-dialog').addEventListener('close',()=>{exportRevision++;});
 ['export-count','export-order','only-new'].forEach(id=>$(id).addEventListener('change',updateExport));
 $('minus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)-1);updateExport();};$('plus').onclick=()=>{$('export-count').value=String(Number($('export-count').value)+1);updateExport();};
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-function markExported(){const ids=new Set(exportSelection.map(w=>w.id));commit(words.map(w=>ids.has(w.id)?{...w,exportedAt:Date.now()}:w));}
-function currentExport(){const count=Number($('export-count').value);if(!Number.isInteger(count)||count<1||count>Number($('export-count').max)){toast('Choose a word count within the available range.');return null;} if(exportSelection.length!==count)updateExport();return toTSV(exportSelection);}
-$('download').onclick=()=>{const data=currentExport();if(!data)return;download(data,`marginalia-${exportSelection.length}-words.txt`,'text/plain;charset=utf-8');markExported();toast('Export downloaded. Import it into Quizlet or Knowt.');$('export-dialog').close();};
-$('copy-export').onclick=async()=>{const data=currentExport();if(!data)return;try{await navigator.clipboard.writeText(data);markExported();toast('Copied. Paste into your flashcard app’s import tool.');$('export-dialog').close();}catch{toast('Clipboard unavailable. Download the text file instead.');}};
+function markExported(selectedIds){const ids=new Set(selectedIds);return commit(words.map(w=>ids.has(w.id)?{...w,exportedAt:Date.now()}:w));}
+function currentExport(){const count=Number($('export-count').value);if(!Number.isInteger(count)||count<1||count>Number($('export-count').max)){toast('Choose a word count within the available range.');return null;}if(exportSelection.length!==count)updateExport();return createExportPayload(exportSelection);}
+$('download').onclick=()=>{
+  const payload=currentExport();if(!payload)return;
+  download(payload.text,`marginalia-${payload.count}-words.txt`,'text/plain;charset=utf-8');markExported(payload.ids);
+  $('export-status').textContent='Text file downloaded. For Knowt or Quizlet, use the Copy button above and paste into the website’s import screen.';
+};
+function selectExportText(){
+  $('manual-export').open=true;const area=$('export-text');area.focus();area.select();area.setSelectionRange(0,area.value.length);
+}
+$('select-export').onclick=()=>{selectExportText();$('export-status').textContent='Text selected. Touch and hold the selection, choose Copy, then paste into your study app’s website.';};
+$('copy-export').onclick=async()=>{
+  const payload=currentExport();if(!payload||copyPending)return;
+  const revision=exportRevision,target=exportApp();copyPending=true;$('copy-export').disabled=true;$('copy-export').textContent='Copying…';
+  try{
+    if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(payload.text);
+    markExported(payload.ids);
+    if(revision===exportRevision&&$('export-dialog').open)$('export-status').textContent=`Copied ${payload.count} ${payload.count===1?'word':'words'}. Open ${target.name}’s website and paste into its import screen. Copying does not create a set automatically.`;
+  }catch{
+    if(revision===exportRevision&&$('export-dialog').open){
+      $('export-text').value=payload.text;selectExportText();
+      $('export-status').textContent='Automatic copying is unavailable. The text below is selected: touch and hold it, choose Copy, then paste it into the website’s import screen.';
+    }
+  }finally{copyPending=false;$('copy-export').disabled=!exportSelection.length;$('copy-export').textContent=`Copy for ${exportApp().name}`;}
+};
 $('backup').onclick=()=>{let data;try{data=storageHealthy?JSON.stringify({version:1,words},null,2):localStorage.getItem(STORAGE);}catch{return toast('Browser storage is unavailable.');}download(data||'{}',`marginalia-backup-${new Date().toISOString().slice(0,10)}.json`,'application/json');toast('Backup downloaded. Keep it somewhere safe.');};
 $('restore').onclick=()=>$('restore-file').click();
 $('restore-file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>30_000_000)throw Error('This backup is too large.');const restored=validateBackup(JSON.parse(await f.text()));const ids=new Set(words.map(w=>w.id));const newWords=restored.filter(w=>!ids.has(w.id));if(commit([...words,...newWords],true))toast(`${newWords.length} words restored. Existing words kept.`);}catch(err){toast(err.message||'This backup could not be restored.');}e.target.value='';};
