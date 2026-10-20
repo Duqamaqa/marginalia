@@ -33,7 +33,9 @@ Open http://localhost:4173. Set `PORT` to use another port. Run `npm test` for t
 3. Add an optional book title and save. The form clears and returns focus to the next word.
 4. Search or sort your collection, then export a chosen number of words in oldest, newest, or random order. Filter out previously exported words when desired.
 
-Exports are UTF-8 `.txt` files with a tab between the word and its meaning and a new line between cards. Translation and example share the definition field. In Quizlet or Knowt's text-import workflow, paste the file contents and select **Tab** and **New line** as separators. This is a portable text format; it does not directly sync to either account.
+Export is **copy-first**. Choose Knowt or Quizlet, copy the selected words, and follow the steps in the export screen. The text has a tab between term and definition and a new line between cards. Translation and example share the definition field. A selectable text fallback is available when clipboard access fails; `.txt` download is optional.
+
+For Knowt, use the website’s **Import manually** screen, paste the text, and choose **Tab** and **New line**. Its [current official guide](https://help.knowt.com/en/articles/10298094-how-can-i-import-flashcards-from-things-like-anki-and-csv-files) describes pasted text rather than choosing a `.txt` file from iPhone Files. On iPhone use Safari; if the import control is unavailable, use a computer. Knowt [syncs the saved set to its mobile app](https://knowt.com/mobile) with the same account. Copying or downloading does not create a set automatically. Previously exported words can be copied again; the unexported-only filter starts off.
 
 ## Install on an iPhone
 

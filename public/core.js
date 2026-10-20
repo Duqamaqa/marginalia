@@ -4,6 +4,9 @@ export const findDuplicate = (words, term, editingId = null) => words.find(w=>w.
 export function toTSV(words) {
   return words.map(w => `${cleanCell(w.word)}\t${[cleanCell(w.translation), cleanCell(w.example),w.exampleSource?`Example: ${cleanCell(w.exampleSource)} (CC BY-SA 4.0)`:''].filter(Boolean).join(' — ')}`).join('\n');
 }
+export function createExportPayload(words) {
+  return { ids: words.map(w=>w.id), count: words.length, text: toTSV(words) };
+}
 export function chooseWords(words, { count, order = 'oldest', onlyNew = false }, random = Math.random) {
   const list = words.filter(w => !onlyNew || !w.exportedAt).sort((a,b) => a.createdAt - b.createdAt);
   if (order === 'newest') list.reverse();

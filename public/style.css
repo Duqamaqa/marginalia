@@ -140,3 +140,19 @@ dialog>label { margin-top: 18px; }
   dialog { padding: 20px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+.export-actions { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
+.export-actions .secondary { display: flex; align-items: center; justify-content: center; text-align: center; white-space: normal; }
+.export-status { font-size: 13px; line-height: 1.7; margin-top: 14px; color: var(--accent); }
+.export-status:empty { display: none; }
+.import-guide { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 18px; }
+.import-guide h3 { font-size: 14px; font-weight: 600; }
+.import-guide ol { font-size: 12px; line-height: 1.8; color: var(--muted); padding-left: 20px; margin: 10px 0; }
+.import-guide li { padding-left: 3px; margin-bottom: 7px; }
+.import-guide p { font-size: 12px; line-height: 1.7; color: var(--muted); }
+.import-guide>a { display: inline-block; min-height: 44px; align-content: center; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; color: var(--muted); }
+.manual-export { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 5px; }
+.manual-export[open] summary { margin-bottom: 12px; }
+#export-text { font-size: 16px; line-height: 1.6; white-space: pre; overflow-wrap: normal; tab-size: 4; }
+.manual-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+@media(max-width:380px) { .export-actions { grid-template-columns: 1fr; } }

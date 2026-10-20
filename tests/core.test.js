@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanCell, toTSV, chooseWords, validateBackup, normalizeWord, findDuplicate } from '../public/core.js';
+import { cleanCell, toTSV, createExportPayload, chooseWords, validateBackup, normalizeWord, findDuplicate } from '../public/core.js';
 
 const entry = (id, createdAt, extra = {}) => ({ id, word: `word-${id}`, translation: 'слово', example: 'A word in context.', book: 'My book', createdAt, ...extra });
 
@@ -42,6 +42,21 @@ test('sourced examples retain attribution through backup and flashcard export', 
   assert.ok(exported.includes('CC BY-SA 4.0'));
   assert.equal(exported.split('\t').length, 2);
   assert.throws(() => validateBackup({ version: 1, words: [{ ...word, exampleSource: 'javascript:alert(1)' }] }));
+});
+
+test('export payload snapshots selected IDs, count and sanitized Russian text', () => {
+  const words = [
+    entry('1', 1, { word: '  discovery\t', translation: 'открытие;\nнаходка — «счастливая»', example: 'A\r\nnew discovery.' }),
+    entry('2', 2, { word: 'solace', translation: '\tутешение…\n', example: '' }),
+  ];
+  const payload = createExportPayload(words);
+  const expected = { ids: ['1', '2'], count: 2, text: 'discovery\tоткрытие; находка — «счастливая» — A new discovery.\nsolace\tутешение…' };
+  assert.deepEqual(payload, expected);
+  words[0].id = 'changed'; words[0].word = 'changed'; words[0].translation = 'changed';
+  words.reverse(); words.push(entry('3', 3));
+  assert.deepEqual(payload, expected, 'pending clipboard work must retain exactly the selected snapshot');
+  assert.ok(!payload.text.endsWith('\n'));
+  assert.ok(payload.text.split('\n').every(row => row && row.split('\t').length === 2));
 });
 
 test('export selection respects chronology, count and previously exported cards', () => {
