@@ -11,13 +11,21 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
+  <script src="./theme.js"></script>
   <link rel="stylesheet" href="./style.css">
   <title>Marginalia — Your vocabulary</title>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="Marginalia home">marginalia</a>
-    <button id="help-open" class="quiet">Help</button>
+    <div class="header-actions">
+      <label class="theme-picker">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M20.6 13.2A8.7 8.7 0 0 1 10.8 3.4 8.8 8.8 0 1 0 20.6 13.2Z"/></svg>
+        <span class="sr-only">Color theme</span>
+        <select id="theme-choice"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      </label>
+      <button id="help-open" class="quiet">Help</button>
+    </div>
   </header>
   <main>
     <section class="intro" aria-labelledby="intro-title">

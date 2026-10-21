@@ -12,7 +12,7 @@ Capture unfamiliar English words, discover their Russian meanings and English ex
 - **Learn in context.** Keep a Russian translation, an English example, or both. Add the book it came from.
 - **Keep a collection, not duplicates.** Saved words are recognized instantly; edit an existing entry whenever you need.
 - **Practice on your terms.** Export any number of words in chronological or random order, ready for flashcard text import.
-- **Make it yours.** A focused Home Screen experience, offline access to saved words, and portable JSON backups.
+- **Make it yours.** Choose Light, Dark, or System beside Help; your preference is remembered on this device. A focused Home Screen experience, offline access to saved words, and portable JSON backups.
 
 ## Run locally
 
