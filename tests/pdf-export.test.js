@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { PDFDocument, PDFName, PDFDict, decodePDFRawStream } from '../public/vendor/pdf-lib.esm.min.js';
+import { PDFDocument, PDFName, PDFDict, PDFHexString, decodePDFRawStream } from '../public/vendor/pdf-lib.esm.min.js';
 import { createVocabularyPdf } from '../public/pdf-export.js';
 
 const fontBytes = new Uint8Array(await readFile(new URL('../public/vendor/NotoSans-Regular.ttf', import.meta.url)));
@@ -58,4 +58,38 @@ test('long vocabulary fields and unbroken source URLs produce additional usable 
 test('PDF generation rejects an empty selection or missing card meaning', async () => {
   await assert.rejects(createVocabularyPdf([], { fontBytes }), /at least one word/i);
   await assert.rejects(createVocabularyPdf([{ word: 'empty', translation: '', example: '' }], { fontBytes }), /translation or example/i);
+});
+
+const hebrewFontBytes = new Uint8Array(await readFile(new URL('../public/vendor/NotoSansHebrew-Regular.ttf', import.meta.url)));
+function contentText(pdf) {
+  return pdf.getPages().flatMap(page => page.node.Contents().asArray().map(ref =>
+    new TextDecoder().decode(decodePDFRawStream(pdf.context.lookup(ref)).decode()))).join('\n');
+}
+
+test('Hebrew PDF embeds both scripts and retains logical Unicode text for RTL mixed sentences', async () => {
+  const sentence = 'שלום עולם! יש לי 123 ספרים (books).';
+  const bytes = await createVocabularyPdf([{language:'he', word:'שלום', translation:'мир; приветствие', example:sentence}], {fontBytes, hebrewFontBytes});
+  const pdf = await PDFDocument.load(bytes);
+  assert.equal(pdf.catalog.get(PDFName.of('Lang')).decodeText(), 'he');
+  assert.match(pdf.getSubject(), /Hebrew vocabulary/);
+  const mappings = unicodeMappings(pdf, pdf.getPage(0));
+  assert.match(mappings, /05e9/i, 'Hebrew shin needs an extractable Unicode mapping');
+  assert.match(mappings, /043c/i, 'Russian translation must keep its own supported font');
+  const content = contentText(pdf);
+  assert.ok(content.includes(PDFHexString.fromText('שלום').toString()), 'term ActualText stays logical');
+  assert.ok(content.includes(PDFHexString.fromText(sentence).toString()), 'mixed sentence ActualText preserves original punctuation and digits');
+  assert.ok(!content.includes('/ActualText <FEFF>'), 'no empty text spans');
+});
+
+test('Hebrew PDF snapshots records before async font work and handles niqqud and wrapped lines', async () => {
+  const records = [{language:'he', word:'תַּגְלִית', translation:'открытие', example:'זאת תגלית חשובה מאוד. '.repeat(250)}];
+  const pending = createVocabularyPdf(records, {fontBytes, hebrewFontBytes});
+  records[0].word = 'changed';
+  const pdf = await PDFDocument.load(await pending);
+  assert.ok(pdf.getPageCount() > 1, 'long Hebrew sentences flow rather than clip');
+  assert.ok(contentText(pdf).includes(PDFHexString.fromText('תַּגְלִית').toString()));
+});
+
+test('PDF rejects mixed vocabulary lists instead of mislabeling their language', async () => {
+  await assert.rejects(createVocabularyPdf([word,{language:'he',word:'שלום',translation:'привет'}], {fontBytes,hebrewFontBytes}), /one vocabulary language/i);
 });

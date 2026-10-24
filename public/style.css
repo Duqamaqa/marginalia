@@ -189,3 +189,21 @@ dialog>label { margin-top: 18px; }
 .theme-picker:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
 .theme-picker select:focus { outline: none; }
 @media (max-width: 700px) { .header-actions { gap: 12px; } .theme-picker { padding-left: 10px; gap: 5px; } .theme-picker select { font-size: 16px; width: 94px; } }
+
+.language-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 8px; }
+.language-picker { display: flex; align-items: center; gap: 10px; margin: 0; margin-left: auto; color: var(--muted); font-size: 12px; }
+.language-picker select { width: auto; min-height: 44px; padding: 9px 10px; font-size: 14px; background: var(--surface); }
+.language-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.language-tab { min-height: 44px; display: flex; align-items: center; gap: 9px; border-radius: 7px; padding: 10px 13px; background: transparent; color: var(--muted); font-size: 13px; border: 1px solid transparent; }
+.language-tab:hover { background: var(--hover); }
+.language-tab[aria-pressed="true"] { background: var(--selected); border-color: var(--line); color: var(--accent); }
+.language-count { font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
+.word-card h3[dir="rtl"] { text-align: start; }
+.word-card .example[dir="rtl"] { text-align: right; }
+@media(max-width:700px) {
+  .language-bar { flex-wrap: wrap; padding-top: 12px; gap: 10px; }
+  .language-picker { margin-left: 0; }
+  .language-picker select { font-size: 16px; }
+  .language-tabs { width: 100%; }
+  .intro { padding-top: 25px; }
+}

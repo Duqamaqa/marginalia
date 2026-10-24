@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanCell, toTSV, createExportPayload, chooseWords, validateBackup, normalizeWord, findDuplicate } from '../public/core.js';
+import { cleanCell, toTSV, createExportPayload, chooseWords, validateBackup, normalizeWord, findDuplicate, languageOf, wordsForLanguage } from '../public/core.js';
 
 const entry = (id, createdAt, extra = {}) => ({ id, word: `word-${id}`, translation: 'слово', example: 'A word in context.', book: 'My book', createdAt, ...extra });
 
@@ -19,6 +19,42 @@ test('duplicate warning finds words across books and excludes the card being edi
   assert.ok(!findDuplicate(words, 'solace', '1'));
   assert.ok(!findDuplicate(words, 'new word'));
   assert.deepEqual(words, [first, second]);
+});
+
+test('duplicate matching is scoped by language and Hebrew ignores niqqud', () => {
+  const english = entry('en', 1, { word: 'שלום' });
+  const hebrew = entry('he', 2, { word: 'שָׁלוֹם', language: 'he' });
+  assert.equal(findDuplicate([english], 'שלום', null, 'he'), undefined);
+  assert.equal(findDuplicate([hebrew], 'שלום', null, 'en'), undefined);
+  assert.equal(findDuplicate([english, hebrew], 'שלום', null, 'he'), hebrew);
+  assert.equal(findDuplicate([english, hebrew], 'שלום', null, 'en'), english);
+  assert.equal(findDuplicate([hebrew], 'שלום', 'he', 'he'), undefined);
+  assert.notEqual(normalizeWord('בית־ספר', 'he'), normalizeWord('ביתספר', 'he'), 'Hebrew punctuation is meaningful and must survive normalization');
+  assert.equal(normalizeWord('שָׁלוֹם׃', 'he'), 'שלום׃');
+});
+
+test('mixed-language backups preserve both lists while legacy cards stay English', () => {
+  const legacy = entry('legacy', 1);
+  const english = entry('en', 2, { language: 'en' });
+  const hebrew = entry('he', 3, { word: 'שלום', language: 'he', example: 'שלום, מה שלומך?' });
+  const backup = { version: 1, words: [legacy, english, hebrew] };
+  const restored = validateBackup(JSON.parse(JSON.stringify(backup)));
+  assert.deepEqual(restored, backup.words);
+  assert.equal(Object.hasOwn(restored[0], 'language'), false, 'legacy data must not be rewritten merely to add a default');
+  assert.equal(languageOf(restored[0]), 'en');
+  assert.deepEqual(wordsForLanguage(restored, 'en'), [legacy, english]);
+  assert.deepEqual(wordsForLanguage(restored, 'he'), [hebrew]);
+  for (const language of ['ru', 'toString', '', 1, {}, [], ['he']]) {
+    assert.throws(() => validateBackup({ version: 1, words: [{ ...hebrew, language }] }));
+  }
+});
+
+test('export selection filters language before count, ordering and exported status', () => {
+  const words = [entry('en-old', 1), entry('he-old', 2, { language: 'he' }), entry('en-new', 3, { language: 'en' }), entry('he-new', 4, { language: 'he', exportedAt: 5 })];
+  assert.deepEqual(chooseWords(words, { count: 10, language: 'he' }).map(word => word.id), ['he-old', 'he-new']);
+  assert.deepEqual(chooseWords(words, { count: 1, language: 'he', order: 'newest' }).map(word => word.id), ['he-new']);
+  assert.deepEqual(chooseWords(words, { count: 10, language: 'he', onlyNew: true }).map(word => word.id), ['he-old']);
+  assert.deepEqual(chooseWords(words, { count: 10, language: 'en' }).map(word => word.id), ['en-old', 'en-new']);
 });
 
 test('TSV keeps each card on one line with exactly two cells', () => {

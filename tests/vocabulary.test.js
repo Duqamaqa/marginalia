@@ -169,3 +169,99 @@ test('sentence selection prefers complete examples before fragments across and w
   assert.equal(translated.example, fullSentence);
   assert.equal(translated.translation, 'совет');
 });
+
+const hebrewEntry = (senses, extra = {}) => ({ word: 'שלום', entries: [{ language: { code: 'he', name: 'Hebrew' }, senses }], source: { url: 'https://en.wiktionary.org/wiki/שלום' }, ...extra });
+const hebrewSentence = 'אני רוצה לחיות בשלום.';
+
+test('Hebrew lookup returns a same-sense Russian meaning and Hebrew sentence without English fallback', async () => {
+  const calls = [];
+  const result = await lookupVocabulary('שָׁלוֹם', { language: 'he', fetchImpl: async url => {
+    calls.push(url);
+    assert.equal(decodeURIComponent(new URL(url).pathname), '/api/v1/entries/he/שלום');
+    assert.equal(new URL(url).searchParams.get('translations'), 'true');
+    return response(hebrewEntry([{ definition: 'Peace.', examples: [hebrewSentence], translations: [ru('мир')] }]));
+  } });
+  assert.equal(calls.length, 1);
+  assert.equal(result.status, 'found');
+  assert.equal(result.translation, 'мир');
+  assert.equal(result.example, hebrewSentence);
+  assert.equal(result.exampleSource, 'https://en.wiktionary.org/wiki/שלום');
+});
+
+test('Hebrew entries never autofill English examples or use a different language entry', () => {
+  const data = hebrewEntry([{ definition: 'Peace.', examples: ['We all want lasting peace.'], translations: [ru('мир')] }]);
+  data.entries.unshift({ language: { code: 'en' }, senses: [{ definition: 'An English sense.', examples: ['An English example sentence here.'], translations: [ru('ошибка')] }] });
+  const parsed = parseVocabularyEntry(data, { language: 'he' });
+  assert.equal(parsed.definition, 'Peace.');
+  assert.equal(parsed.translation, 'мир');
+  assert.equal(parsed.example, '');
+  const wrongLanguageOnly = parseVocabularyEntry({ entries: [data.entries[0]] }, { language: 'he' });
+  assert.equal(wrongLanguageOnly, null);
+});
+
+test('Hebrew parser prefers Hebrew sentences over English sentences and Hebrew fragments', () => {
+  const parsed = parseVocabularyEntry(hebrewEntry([
+    { definition: 'Greeting.', examples: ['שלום', 'Hello there my good friend.'], translations: [ru('привет')] },
+    { definition: 'Peace.', examples: ['שלום בעולם', hebrewSentence], translations: [ru('мир')] },
+  ]), { language: 'he' });
+  assert.equal(parsed.example, hebrewSentence);
+  assert.equal(parsed.translation, 'мир');
+  assert.equal(parsed.definition, 'Peace.');
+});
+
+test('Hebrew dictionary English definition is translated to Russian without a bare-word request', async () => {
+  const calls = [];
+  const result = await lookupVocabulary('שלום', { language: 'he', fetchImpl: async url => {
+    calls.push(url);
+    if (isTranslator(url)) {
+      assert.equal(new URL(url).searchParams.get('q'), 'peace');
+      assert.equal(new URL(url).searchParams.get('langpair'), 'en|ru');
+      return response({ responseStatus: 200, responseData: { translatedText: 'мир' } });
+    }
+    assert.ok(isPrimary(url), 'English legacy provider must never receive Hebrew terms');
+    return response(hebrewEntry([{ definition: '(uncountable) peace', examples: [hebrewSentence], translations: [] }]));
+  } });
+  assert.equal(calls.length, 2);
+  assert.equal(result.translation, 'мир');
+  assert.equal(result.example, hebrewSentence);
+});
+
+test('unknown Hebrew uses only the Hebrew dictionary and never an English fallback or translator', async () => {
+  for (const unavailable of [false, true]) {
+    let calls = 0;
+    const result = await lookupVocabulary('מילהלאקיימת', { language: 'he', fetchImpl: async url => {
+      calls++;
+      assert.ok(isPrimary(url));
+      assert.ok(new URL(url).pathname.includes('/entries/he/'));
+      if (unavailable) throw new Error('Offline');
+      return response({ word: 'מילהלאקיימת', entries: [] });
+    } });
+    assert.equal(calls, 1);
+    assert.equal(result.status, unavailable ? 'unavailable' : 'not-found');
+    assert.equal(result.translation, '');
+    assert.equal(result.example, '');
+  }
+});
+
+test('Hebrew exact-headword matching ignores niqqud but rejects unrelated dictionary results', async () => {
+  const result = await lookupVocabulary('שלום', { language: 'he', fetchImpl: async () => response(hebrewEntry([
+    { definition: 'Peace.', examples: [hebrewSentence], translations: [ru('мир')] },
+  ], { word: 'שָׁלוֹם' })) });
+  assert.equal(result.status, 'found');
+  const wrong = await lookupVocabulary('שלום', { language: 'he', fetchImpl: async () => response(hebrewEntry([
+    { definition: 'Book.', translations: [ru('книга')] },
+  ], { word: 'ספר' })) });
+  assert.equal(wrong.status, 'not-found');
+});
+
+test('known Hebrew without a Hebrew example keeps Russian meaning and does not borrow English', async () => {
+  let calls = 0;
+  const result = await lookupVocabulary('שלום', { language: 'he', fetchImpl: async () => {
+    calls++;
+    return response(hebrewEntry([{ definition: 'Peace.', examples: ['Peace is what we need.'], translations: [ru('мир')] }]));
+  } });
+  assert.equal(calls, 1);
+  assert.equal(result.status, 'found');
+  assert.equal(result.example, '');
+  assert.equal(result.translation, 'мир');
+});

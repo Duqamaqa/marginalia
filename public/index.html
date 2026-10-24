@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="Save unfamiliar English words, learn their Russian meanings, and export your vocabulary to Quizlet or Knowt.">
+  <meta name="description" content="Save unfamiliar English or Hebrew words, learn their Russian meanings, and export your vocabulary to Quizlet or Knowt.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Marginalia">
@@ -28,15 +28,21 @@
     </div>
   </header>
   <main>
+    <div class="language-bar">
+      <div id="language-tabs" class="language-tabs" role="group" aria-label="Saved languages" hidden></div>
+      <label class="language-picker">Reading language
+        <select id="language-choice"><option value="en">English</option><option value="he">Hebrew · עברית</option></select>
+      </label>
+    </div>
     <section class="intro" aria-labelledby="intro-title">
       <h1 id="intro-title">Save new words as you read.</h1>
-      <p>Type an English word, save its meaning, then export words to study.</p>
+      <p id="intro-copy">Type an English word, save its Russian meaning, then export words to study.</p>
     </section>
     <div class="workspace">
       <section class="capture-panel" id="capture" aria-labelledby="capture-title">
         <h2 id="capture-title">Add a word</h2>
         <form id="word-form">
-          <label for="word">English word</label>
+          <label id="word-label" for="word">English word</label>
           <div class="word-input-wrap">
             <input id="word" name="word" placeholder="e.g. discovery" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="100" enterkeyhint="done" aria-describedby="lookup-status">
             <button type="button" id="lookup" class="lookup-button">Look up</button>
@@ -54,7 +60,7 @@
                 <input id="translation" placeholder="Translation appears here" maxlength="1000" lang="ru" autocomplete="off">
               </div>
               <div class="field-block" id="example-block">
-                <label for="example">English example</label>
+                <label id="example-label" for="example">English example</label>
                 <textarea id="example" placeholder="Example appears here. You can also add a sentence from your book." rows="3" maxlength="2000"></textarea>
                 <p id="definition" class="definition"></p>
                 <p id="example-status" class="field-hint" role="status"></p>
@@ -84,7 +90,7 @@
           <h2 id="collection-title">Saved words <span id="word-count" class="count-badge">0</span></h2>
           <button id="export-open" class="secondary" disabled>Export words</button>
         </div>
-        <p class="collection-help">Export to practice in Quizlet or Knowt.</p>
+        <p id="collection-help" class="collection-help">Export to practice in Quizlet or Knowt.</p>
         <div class="search-row" id="collection-tools" hidden>
           <label class="sr-only" for="search">Search saved words</label>
           <input id="search" type="search" placeholder="Search words or books">
@@ -137,7 +143,7 @@
   <dialog id="help-dialog" aria-labelledby="help-title">
     <div class="dialog-heading"><h2 id="help-title">How to use Marginalia</h2><button class="close" data-close aria-label="Close help">×</button></div>
     <ol class="help-steps">
-      <li><b>Enter an English word.</b><p>A Russian meaning and English example from the same dictionary meaning appear when available. You can edit either field.</p></li>
+      <li><b>Choose English or Hebrew, then enter a word.</b><p>Each language has its own list. Languages with saved words appear at the top for quick switching. A Russian meaning and an example in your reading language appear when available. You can edit either field.</p></li>
       <li><b>Tap Save word.</b><p>The word joins your list and the input clears for the next one. If a word isn’t found, enter your own translation or example to enable Save. Already saved words are flagged automatically.</p></li>
       <li><b>Tap Export words.</b><p>Choose how many words and your study app. Download a PDF for Knowt’s file uploader, or copy text for Quizlet’s website. The export screen shows each step.</p></li>
     </ol>

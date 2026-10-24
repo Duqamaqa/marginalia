@@ -33,19 +33,21 @@ export async function dictionaryExample(term, {signal,fetchImpl=fetch}={}) {
   } finally {controllers.forEach(c=>c.abort());}
 }
 
-// Keep the Russian meaning and English sentence attached to one dictionary sense.
-export function parseVocabularyEntry(data) {
+// Keep the Russian meaning and source-language sentence attached to one dictionary sense.
+export function parseVocabularyEntry(data, {language = 'en'} = {}) {
   const flatten = senses => (Array.isArray(senses) ? senses : []).flatMap(s => [s, ...flatten(s.subsenses)]);
   const russian = sense => [...new Set((sense.translations || [])
     .filter(t => t.language?.code === 'ru').map(t => text(t.word).normalize('NFC').replace(/\u0301/g, '')).filter(Boolean))].join('; ');
-  const senses = (data?.entries || []).flatMap(entry => flatten(entry.senses)).filter(s => text(s.definition));
-  const sentence = s => s.examples?.find(e => /[.!?][’”"']?$/.test(text(e)) && text(e).split(/\s+/).length >= 4);
-  const hasExample = s => s.examples?.some(e => text(e));
+  const senses = (data?.entries || []).filter(entry => !entry.language?.code || entry.language.code === language)
+    .flatMap(entry => flatten(entry.senses)).filter(s => text(s.definition));
+  const eligible = e => text(e) && (language !== 'he' || /[\u05D0-\u05EA]/.test(text(e)));
+  const sentence = s => s.examples?.find(e => eligible(e) && /[.!?\u05C3][’”"']?$/.test(text(e)) && text(e).split(/\s+/).length >= (language === 'he' ? 2 : 4));
+  const hasExample = s => s.examples?.some(eligible);
   const sense = senses.find(s => russian(s) && sentence(s)) || senses.find(sentence)
     || senses.find(s => russian(s) && hasExample(s)) || senses.find(hasExample)
     || senses.find(s => russian(s)) || senses[0];
   if (!sense) return null;
-  return { definition: text(sense.definition), example: text(sentence(sense) || sense.examples?.find(e => text(e))),
+  return { definition: text(sense.definition), example: text(sentence(sense) || sense.examples?.find(eligible)),
     translation: russian(sense), ...(data?.source?.url?.startsWith('https://en.wiktionary.org/wiki/') ? {exampleSource: data.source.url} : {}) };
 }
 
@@ -90,19 +92,27 @@ async function translateMeaning(definition, {signal,fetchImpl}) {
   finally { clearTimeout(timer);signal?.removeEventListener('abort',abort); }
 }
 
-export async function lookupVocabulary(term, {signal,fetchImpl=fetch}={}) {
+// Remove Hebrew vowel/cantillation marks, retaining punctuation such as maqaf.
+const headword = (value, language) => {
+  const normalized = text(value).normalize('NFC');
+  return (language === 'he' ? normalized.replace(/[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/g, '') : normalized).toLocaleLowerCase();
+};
+
+export async function lookupVocabulary(term, {signal,fetchImpl=fetch,language='en'}={}) {
+  if (!['en','he'].includes(language)) throw new RangeError('Unsupported dictionary language.');
   const options = {signal,fetchImpl};
+  const query = language === 'he' ? headword(term,language) : term;
   const fallbackController = new AbortController(), abortFallback = () => fallbackController.abort();
   if (signal?.aborted) abortFallback(); else signal?.addEventListener('abort',abortFallback,{once:true});
   // Start the fallback immediately, but don't delay a successful primary for a slow fallback.
-  const fallbackRequest = requestDictionary(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`, data => {
+  const fallbackRequest = language === 'en' ? requestDictionary(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`, data => {
     const entries = Array.isArray(data) ? data.filter(e => text(e.word).toLocaleLowerCase()===term.trim().toLocaleLowerCase()) : [];
     return {...parseLegacy(entries),translation:''};
-  }, {...options,signal:fallbackController.signal});
+  }, {...options,signal:fallbackController.signal}) : Promise.resolve(null);
   try {
-    const primary = await requestDictionary(`https://freedictionaryapi.com/api/v1/entries/en/${encodeURIComponent(term)}?translations=true`, data => {
-      if (text(data?.word).toLocaleLowerCase() !== term.trim().toLocaleLowerCase()) return null;
-      return parseVocabularyEntry(data);
+    const primary = await requestDictionary(`https://freedictionaryapi.com/api/v1/entries/${language}/${encodeURIComponent(query)}?translations=true`, data => {
+      if (headword(data?.word,language) !== headword(term,language)) return null;
+      return parseVocabularyEntry(data,{language});
     }, options);
     if (signal?.aborted) throw new DOMException('Aborted','AbortError');
     const fallback = primary.status==='found'&&primary.example ? null : await fallbackRequest;

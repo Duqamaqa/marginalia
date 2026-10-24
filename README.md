@@ -2,7 +2,7 @@
 
 **Words worth keeping.** A quiet home for the vocabulary you discover between the pages.
 
-Capture unfamiliar English words, discover their Russian meanings and English examples, and carry your collection into Quizlet or Knowt. Thoughtfully designed for reading on an iPhone and installing on its Home Screen.
+Capture unfamiliar English or Hebrew words, discover their Russian meanings and examples in the reading language, and carry your collection into Quizlet or Knowt. Thoughtfully designed for reading on an iPhone and installing on its Home Screen.
 
 [Open Marginalia](https://duqamaqa.github.io/marginalia/) · [Report an issue](https://github.com/Duqamaqa/marginalia/issues)
 
@@ -28,12 +28,14 @@ Open http://localhost:4173. Set `PORT` to use another port. Run `npm test` for t
 
 ## Reading workflow
 
-1. Type an English word or phrase. Lookups choose a dictionary meaning with an English example where available, then use the Russian translation for that same meaning. If the dictionary has no Russian translation, the selected English definition is translated into Russian instead.
+1. Choose **Reading language → English or Hebrew**, then type a word or phrase. Lookups choose a dictionary meaning with an English example where available, then use the Russian translation for that same meaning. If the dictionary has no Russian translation, the selected English definition is translated into Russian instead.
 2. Choose Both, Translation, or English example. Edit the suggested meaning to match your book; dictionary examples are not available for every word.
 3. Add an optional book title and save. The form clears and returns focus to the next word.
 4. Search or sort your collection, then export a chosen number of words in oldest, newest, or random order. Filter out previously exported words when desired.
 
-For **Knowt’s iPhone app**, choose Knowt → Download PDF for Knowt → Save PDF to Files. If a preview opens, use Share → Save to Files. In Knowt choose Create → Flashcards → Upload file from device, select the PDF, and choose Flashcards if prompted. The [official AI summarizer guide](https://help.knowt.com/en/articles/10305785-how-do-i-use-the-ai-summarizers) confirms PDF support. This is AI generation: it uses Knowt’s AI allowance and can change or omit cards, so review the resulting set. The PDF preserves selected words, Russian translations, English examples and source attribution with embedded Unicode text. PDF creation runs locally; vocabulary is not sent to a PDF service. Bundled libraries and font licenses are in `public/vendor/`.
+Each language has a separate saved list. Languages with at least one word appear at the top with a word count for quick switching. Search, duplicate detection, pronunciation and exports use the selected language only. Existing words and older backups without a language stay in English. JSON backup includes all language lists. Hebrew input, examples and saved terms use right-to-left text. Switching language keeps the current unsaved draft for the session and cancels pending lookups.
+
+For **Knowt’s iPhone app**, choose Knowt → Download PDF for Knowt → Save PDF to Files. If a preview opens, use Share → Save to Files. In Knowt choose Create → Flashcards → Upload file from device, select the PDF, and choose Flashcards if prompted. The [official AI summarizer guide](https://help.knowt.com/en/articles/10305785-how-do-i-use-the-ai-summarizers) confirms PDF support. This is AI generation: it uses Knowt’s AI allowance and can change or omit cards, so review the resulting set. The PDF preserves selected words, Russian translations, examples in the reading language and source attribution with embedded Unicode text. PDF creation runs locally; vocabulary is not sent to a PDF service. Bundled libraries and font licenses are in `public/vendor/`.
 
 For **Quizlet**, copy the selected text into its website import screen with Tab between term and definition and New line between cards. A selectable text fallback and `.txt` download remain available. Preparing a file does not create a set in either app. Previously exported words can be exported again; the unexported-only filter starts off.
 

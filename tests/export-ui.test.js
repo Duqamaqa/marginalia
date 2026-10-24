@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { createExportPayload, chooseWords } from '../public/core.js';
+import { createExportPayload, chooseWords, LANGUAGES, wordsForLanguage, validateBackup } from '../public/core.js';
 
 const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 // Execute the real export controller with just its DOM and storage boundaries mocked.
@@ -11,9 +11,11 @@ assert.ok(section.includes("$('copy-export').onclick="));
 const pdfImport = "await import('./pdf-export.js')";
 assert.ok(section.includes(pdfImport));
 const controller = section.replace(pdfImport, 'await Promise.resolve({createVocabularyPdf: pdfGenerator})');
+const backupController = app.slice(app.indexOf("$('backup').onclick="), app.indexOf("$('restore').onclick="));
+const storageController = app.slice(app.indexOf("window.addEventListener('storage'"), app.indexOf('function connection()'));
 const seed = () => ['a', 'b', 'c'].map((id, index) => ({ id, word: id, translation: `слово ${id}`, example: '', book: '', createdAt: index + 1 }));
 
-function harness(clipboard, pdfGenerator = async () => new Uint8Array([37, 80, 68, 70])) {
+function harness(clipboard, pdfGenerator = async () => new Uint8Array([37, 80, 68, 70]), { words = seed(), language = 'en' } = {}) {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -28,22 +30,31 @@ function harness(clipboard, pdfGenerator = async () => new Uint8Array([37, 80, 6
   }
   element('export-target').value = 'knowt';
   element('export-order').value = 'oldest';
-  const commits = [], messages = [], blobs = new Map(), revoked = [];
+  const commits = [], messages = [], blobs = new Map(), revoked = [], savedDownloads = [], windowEvents = {};
   const urls = {
     createObjectURL(blob) { const url = `blob:test-${blobs.size + 1}`; blobs.set(url, blob); return url; },
     revokeObjectURL(url) { revoked.push(url); },
   };
   const context = vm.createContext({
-    $: element, seedWords: seed(), commits, navigator: { clipboard },
-    createExportPayload, chooseWords, el: (_tag, _class, textContent) => ({ textContent }),
+    $: element, seedWords: words, initialLanguage: language, commits, savedDownloads, navigator: { clipboard },
+    createExportPayload, chooseWords, LANGUAGES, wordsForLanguage, validateBackup, el: (_tag, _class, textContent) => ({ textContent }),
+    window: { addEventListener(name, callback) { windowEvents[name] = callback; } },
     toast: message => messages.push(message), URL: urls, Blob, setTimeout, pdfGenerator,
   });
-  vm.runInContext(`let words=seedWords, exportSelection=[];
+  vm.runInContext(`let words=seedWords, exportSelection=[],activeLanguage=initialLanguage;
+    const activeWords=()=>wordsForLanguage(words,activeLanguage),languageName=()=>LANGUAGES[activeLanguage].name;
     function commit(next){words=next;commits.push(next);return true;}
     ${controller}
+    const STORAGE='marginalia.words.v1';let storageHealthy=true;
+    ${backupController}
+    function render(){}
+    ${storageController}
+    download=(content,name,type)=>savedDownloads.push({content,name,type});
     globalThis.state={get words(){return words;}};`, context);
   element('export-open').onclick();
-  return { element, commits, messages, blobs, revoked, get words() { return context.state.words; } };
+  return { element, commits, messages, blobs, revoked, savedDownloads,
+    storage(words) { windowEvents.storage({ key: 'marginalia.words.v1', newValue: JSON.stringify({ version: 1, words }) }); },
+    get words() { return context.state.words; } };
 }
 
 test('clipboard rejection exposes selectable text without marking cards exported', async () => {
@@ -180,5 +191,62 @@ test('closing the export dialog discards a PDF still being generated', async () 
   await pending;
   assert.equal(ui.blobs.size, 0);
   assert.equal(ui.commits.length, 0);
+  assert.equal(ui.element('pdf-ready').hidden, true);
+});
+
+test('Hebrew export count, text, PDF contents and exported IDs exclude the English list', async () => {
+  const english = seed();
+  const hebrew = [
+    { ...english[0], id: 'he-1', word: 'שלום', language: 'he', example: 'שלום, מה שלומך?' },
+    { ...english[1], id: 'he-2', word: 'ספר', language: 'he', example: 'אני קורא ספר טוב.' },
+  ];
+  let captured;
+  const ui = harness(undefined, async records => { captured = records; return new Uint8Array([37, 80, 68, 70]); }, { words: [...english, ...hebrew], language: 'he' });
+  assert.equal(ui.element('export-count').value, '2');
+  assert.equal(ui.element('export-count').max, '2');
+  assert.equal(ui.element('export-title').textContent, 'Export Hebrew words');
+  const rows = ui.element('export-text').value.split('\n');
+  assert.equal(rows.length, 2);
+  assert.ok(rows[0].startsWith('שלום\t'));
+  assert.ok(rows[1].startsWith('ספר\t'));
+  await ui.element('download-pdf').onclick();
+  assert.deepEqual(Array.from(captured, record => record.id), ['he-1', 'he-2']);
+  ui.element('save-pdf-link').onclick();
+  assert.ok(ui.words.filter(word => word.language === 'he').every(word => word.exportedAt));
+  assert.ok(ui.words.filter(word => !word.language).every(word => !word.exportedAt));
+  ui.element('backup').onclick();
+  const backup = JSON.parse(ui.savedDownloads[0].content);
+  assert.equal(backup.words.length, 5, 'full backup must include every language despite filtered exports');
+  assert.equal(backup.words.filter(word => word.language === 'he').length, 2);
+  assert.equal(backup.words.filter(word => !word.language).length, 3);
+});
+
+test('storage updates refresh an open export and revoke a PDF containing outdated cards', async () => {
+  const ui = harness();
+  await ui.element('download-pdf').onclick();
+  const oldUrl = ui.element('save-pdf-link').href;
+  assert.equal(ui.element('pdf-ready').hidden, false);
+  const changed = ui.words.slice(0, 2).map(word => ({ ...word, translation: `Updated ${word.id}` }));
+  ui.storage(changed);
+  assert.equal(ui.element('export-count').value, '2');
+  assert.equal(ui.element('export-count').max, '2');
+  assert.equal(ui.element('export-text').value, 'a\tUpdated a\nb\tUpdated b');
+  assert.equal(ui.element('pdf-ready').hidden, true);
+  assert.deepEqual(ui.revoked, [oldUrl]);
+  assert.equal(ui.commits.length, 0);
+});
+
+test('storage refresh invalidates an in-flight PDF so stale deleted cards never become downloadable', async () => {
+  let finish;
+  const ui = harness(undefined, () => new Promise(resolve => { finish = resolve; }));
+  const pending = ui.element('download-pdf').onclick();
+  await Promise.resolve();
+  ui.storage([]);
+  finish(new Uint8Array([37, 80, 68, 70]));
+  await pending;
+  assert.equal(ui.blobs.size, 0);
+  assert.equal(ui.element('export-count').value, '0');
+  assert.equal(ui.element('export-text').value, '');
+  assert.equal(ui.element('download-pdf').disabled, true);
   assert.equal(ui.element('pdf-ready').hidden, true);
 });
